@@ -129,7 +129,7 @@ impl Default for Config {
                 max_tasks: 100,
             },
             tool: ToolConfig {
-                enabled_tools: vec!["system".to_string(), "calculator".to_string(), "notepad".to_string()],
+                enabled_tools: vec!["system".to_string(), "calculator".to_string(), "notepad".to_string(), "smart_clipboard".to_string(), "focus_assistant".to_string(), "file_context".to_string(), "health_reminder".to_string()],
             },
             memory: MemoryConfig {
                 db_path: "memory.db".to_string(),
@@ -143,7 +143,7 @@ impl Default for Config {
             permission: PermissionConfig {
                 assistant_base_dir: "./assistant_data".to_string(),
                 user_protected_dirs: vec!["./".to_string(), "~/Documents".to_string(), "~/Desktop".to_string(), "~/Downloads".to_string()],
-                allowed_tools: vec!["system".to_string(), "calculator".to_string(), "notepad".to_string()],
+                allowed_tools: vec!["system".to_string(), "calculator".to_string(), "notepad".to_string(), "smart_clipboard".to_string(), "focus_assistant".to_string(), "file_context".to_string(), "health_reminder".to_string()],
             },
             harness: HarnessConfig {
                 max_workflows: 50,

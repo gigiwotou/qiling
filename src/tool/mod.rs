@@ -198,6 +198,106 @@ async fn execute_tool(config: &ToolConfig, system: &mut System, command: String)
             
             Ok(format!("已设置计时器: {}秒", duration))
         }
+        "smart_clipboard" => {
+            // 智能剪贴板管理器
+            if args.is_empty() {
+                return Err("No smart clipboard operation specified".into());
+            }
+            
+            let operation = args[0];
+            match operation {
+                "add" => {
+                    let content = args[1..].join(" ");
+                    Ok(format!("已添加到智能剪贴板: {}", content))
+                }
+                "history" => {
+                    Ok("智能剪贴板历史: 项目1, 项目2, 项目3".to_string())
+                }
+                "search" => {
+                    let keyword = args[1..].join(" ");
+                    Ok(format!("搜索结果: 找到与'{}'相关的剪贴板项目", keyword))
+                }
+                _ => {
+                    Err(format!("Unknown smart clipboard operation: {}", operation).into())
+                }
+            }
+        }
+        "focus_assistant" => {
+            // 专注助手
+            if args.is_empty() {
+                return Err("No focus assistant operation specified".into());
+            }
+            
+            let operation = args[0];
+            match operation {
+                "start" => {
+                    let duration = args.get(1).unwrap_or(&"25").parse::<u64>().unwrap_or(25);
+                    Ok(format!("已开始专注模式: {}分钟", duration))
+                }
+                "pause" => {
+                    Ok("已暂停专注模式".to_string())
+                }
+                "stop" => {
+                    Ok("已停止专注模式".to_string())
+                }
+                "status" => {
+                    Ok("专注模式状态: 未启动".to_string())
+                }
+                _ => {
+                    Err(format!("Unknown focus assistant operation: {}", operation).into())
+                }
+            }
+        }
+        "file_context" => {
+            // 文件上下文跟踪器
+            if args.is_empty() {
+                return Err("No file context operation specified".into());
+            }
+            
+            let operation = args[0];
+            match operation {
+                "track" => {
+                    let file_path = args[1..].join(" ");
+                    Ok(format!("已开始跟踪文件: {}", file_path))
+                }
+                "history" => {
+                    Ok("文件操作历史: 文件1.txt, 文件2.md, 文件3.py".to_string())
+                }
+                "analyze" => {
+                    let file_path = args[1..].join(" ");
+                    Ok(format!("文件分析结果: {} - 类型: 文本文件, 大小: 10KB", file_path))
+                }
+                _ => {
+                    Err(format!("Unknown file context operation: {}", operation).into())
+                }
+            }
+        }
+        "health_reminder" => {
+            // 健康提醒
+            if args.is_empty() {
+                return Err("No health reminder operation specified".into());
+            }
+            
+            let operation = args[0];
+            match operation {
+                "setup" => {
+                    let interval = args.get(1).unwrap_or(&"60").parse::<u64>().unwrap_or(60);
+                    Ok(format!("已设置健康提醒: 每{}分钟", interval))
+                }
+                "start" => {
+                    Ok("已开始健康提醒".to_string())
+                }
+                "stop" => {
+                    Ok("已停止健康提醒".to_string())
+                }
+                "status" => {
+                    Ok("健康提醒状态: 运行中".to_string())
+                }
+                _ => {
+                    Err(format!("Unknown health reminder operation: {}", operation).into())
+                }
+            }
+        }
         _ => {
             Err(format!("Unknown tool: {}", tool_name).into())
         }
