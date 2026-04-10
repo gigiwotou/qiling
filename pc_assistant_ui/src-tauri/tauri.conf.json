@@ -1,0 +1,51 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devPath": "http://localhost:4000",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "PC个人助手",
+    "version": "0.1.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": false,
+        "execute": true
+      },
+      "http": {
+        "all": true,
+        "request": true
+      }
+    },
+    "bundle": {
+      "active": true,
+      "identifier": "com.pcassistant.app",
+      "category": "Utility",
+      "shortDescription": "PC个人助手，为您提供智能协助",
+      "longDescription": "一款低内存占用、高性能的PC个人助手，支持语音交互、任务管理和网络资料查找。",
+      "copyright": "Copyright (c) 2026"
+    },
+    "security": {
+      "csp": null
+    },
+    "updater": {
+      "active": false
+    },
+    "windows": [
+      {
+        "title": "PC个人助手",
+        "width": 200,
+        "height": 200,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true
+      }
+    ]
+  }
+}

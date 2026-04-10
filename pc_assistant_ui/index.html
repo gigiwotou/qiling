@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PC个人助手</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: Arial, sans-serif;
+      background: transparent;
+      overflow: hidden;
+    }
+    
+    .pet-container {
+      width: 200px;
+      height: 200px;
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      cursor: move;
+      z-index: 9999;
+    }
+    
+    .pet {
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #ffd700, #ffed4e);
+      border-radius: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), inset 0 -5px 10px rgba(0, 0, 0, 0.1);
+      transition: all 0.3s ease;
+      animation: float 3s ease-in-out infinite;
+    }
+    
+    @keyframes float {
+      0%, 100% {
+        transform: translateY(0);
+      }
+      50% {
+        transform: translateY(-10px);
+      }
+    }
+    
+    .pet:hover {
+      transform: scale(1.1) translateY(-5px);
+      box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2), inset 0 -5px 10px rgba(0, 0, 0, 0.1);
+    }
+    
+    .pet-face {
+      width: 120px;
+      height: 120px;
+      background: #ffd700;
+      border-radius: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      box-shadow: inset 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
+    
+    .pet-eyes {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 10px;
+    }
+    
+    .pet-eye {
+      width: 20px;
+      height: 20px;
+      background: #000;
+      border-radius: 50%;
+      position: relative;
+      animation: blink 3s infinite;
+    }
+    
+    @keyframes blink {
+      0%, 90%, 100% {
+        height: 20px;
+      }
+      95% {
+        height: 2px;
+      }
+    }
+    
+    .pet-eye::after {
+      content: '';
+      position: absolute;
+      top: 5px;
+      left: 5px;
+      width: 8px;
+      height: 8px;
+      background: white;
+      border-radius: 50%;
+    }
+    
+    .pet-mouth {
+      width: 40px;
+      height: 20px;
+      background: #000;
+      border-radius: 0 0 20px 20px;
+      transition: all 0.3s ease;
+    }
+    
+    .pet:hover .pet-mouth {
+      height: 25px;
+      border-radius: 50% 50% 20px 20px;
+    }
+    
+    .pet-message {
+      position: absolute;
+      top: -60px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.9);
+      padding: 10px;
+      border-radius: 10px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+      max-width: 150px;
+      text-align: center;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+    }
+    
+    .pet-message.show {
+      opacity: 1;
+    }
+    
+
+  </style>
+</head>
+<body>
+  <div class="pet-container" id="petContainer">
+    <div class="pet">
+        <div class="pet-message" id="petMessage"></div>
+        <div class="pet-face">
+          <div class="pet-eyes">
+            <div class="pet-eye"></div>
+            <div class="pet-eye"></div>
+          </div>
+          <div class="pet-mouth"></div>
+        </div>
+      </div>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
