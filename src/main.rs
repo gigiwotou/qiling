@@ -14,6 +14,7 @@ mod memory;
 mod dream;
 mod permission;
 mod harness;
+mod skill;
 
 #[tokio::main]
 async fn main() {

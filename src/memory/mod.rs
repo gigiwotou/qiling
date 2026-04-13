@@ -1,3 +1,5 @@
+pub mod persistent_memory;
+
 use crate::config::Config;
 use crate::core::communication::CommManager;
 use log::{info, warn};
@@ -11,6 +13,7 @@ pub struct MemoryModule {
     db_pool: SqlitePool,
     comm_manager: Arc<CommManager>,
     shutdown: bool,
+    persistent_memory: persistent_memory::PersistentMemory,
 }
 
 #[derive(Debug, Clone, sqlx::FromRow, Serialize, Deserialize)]
@@ -80,10 +83,17 @@ impl MemoryModule {
             )
         "#).execute(&db_pool).await.unwrap();
         
+        // 初始化持久记忆模块
+        let persistent_memory = persistent_memory::PersistentMemory::new(
+            &config.memory.db_path,
+            Arc::new(comm_manager.clone())
+        ).unwrap();
+        
         Self {
             db_pool,
             comm_manager: Arc::new(comm_manager.clone()),
             shutdown: false,
+            persistent_memory,
         }
     }
     
@@ -100,6 +110,9 @@ impl MemoryModule {
     
     pub async fn store_memory(&self, category: String, key: String, value: String) -> Result<MemoryItem, Box<dyn std::error::Error>> {
         info!("Storing memory: {} - {}", category, key);
+        
+        // 同时存储到持久记忆
+        self.persistent_memory.add_memory(&category, &key, &value, 1)?;
         
         let now = Utc::now().to_rfc3339();
         
@@ -122,6 +135,19 @@ impl MemoryModule {
     pub async fn get_memory(&self, category: String, key: String) -> Result<Option<MemoryItem>, Box<dyn std::error::Error>> {
         info!("Getting memory: {} - {}", category, key);
         
+        // 优先从持久记忆中获取
+        if let Ok(Some(persistent_item)) = self.persistent_memory.get_memory(&category, &key) {
+            let timestamp = persistent_item.timestamp.clone();
+            return Ok(Some(MemoryItem {
+                id: persistent_item.id,
+                category: persistent_item.category,
+                key: persistent_item.key,
+                value: persistent_item.value,
+                created_at: timestamp.clone(),
+                updated_at: timestamp,
+            }));
+        }
+        
         let memory = sqlx::query_as::<_, MemoryItem>(r#"
             SELECT id, category, key, value, created_at, updated_at
             FROM memory_items
@@ -139,6 +165,9 @@ impl MemoryModule {
     
     pub async fn set_preference(&self, key: String, value: String) -> Result<UserPreference, Box<dyn std::error::Error>> {
         info!("Setting preference: {} = {}", key, value);
+        
+        // 同时更新持久记忆中的用户配置
+        self.persistent_memory.set_user_profile(&key, &value)?;
         
         let now = Utc::now().to_rfc3339();
         
@@ -186,6 +215,18 @@ impl MemoryModule {
     
     pub async fn get_preference(&self, key: String) -> Result<Option<UserPreference>, Box<dyn std::error::Error>> {
         info!("Getting preference: {}", key);
+        
+        // 优先从持久记忆中获取
+        if let Ok(Some(profile)) = self.persistent_memory.get_user_profile(&key) {
+            let timestamp = profile.timestamp.clone();
+            return Ok(Some(UserPreference {
+                id: profile.id,
+                key: profile.key,
+                value: profile.value,
+                created_at: timestamp.clone(),
+                updated_at: timestamp,
+            }));
+        }
         
         let preference = sqlx::query_as::<_, UserPreference>(r#"
             SELECT id, key, value, created_at, updated_at
@@ -237,6 +278,24 @@ impl MemoryModule {
     pub async fn search_memory(&self, query: String) -> Result<Vec<MemoryItem>, Box<dyn std::error::Error>> {
         info!("Searching memory for: {}", query);
         
+        // 优先从持久记忆中搜索
+        if let Ok(persistent_results) = self.persistent_memory.search_memory(&query) {
+            let persistent_results: Vec<persistent_memory::MemoryItem> = persistent_results;
+            if !persistent_results.is_empty() {
+                return Ok(persistent_results.into_iter().map(|item| {
+                    let timestamp = item.timestamp.clone();
+                    MemoryItem {
+                        id: item.id,
+                        category: item.category,
+                        key: item.key,
+                        value: item.value,
+                        created_at: timestamp.clone(),
+                        updated_at: timestamp,
+                    }
+                }).collect());
+            }
+        }
+        
         let items = sqlx::query_as::<_, MemoryItem>(r#"
             SELECT id, category, key, value, created_at, updated_at
             FROM memory_items
@@ -250,5 +309,27 @@ impl MemoryModule {
         .await?;
         
         Ok(items)
+    }
+    
+    // 新增：技能管理相关方法
+    pub fn add_skill(&self, name: &str, description: &str, content: &str) -> Result<persistent_memory::Skill, Box<dyn std::error::Error>> {
+        Ok(self.persistent_memory.add_skill(name, description, content)?)
+    }
+    
+    pub fn get_skill(&self, name: &str) -> Result<Option<persistent_memory::Skill>, Box<dyn std::error::Error>> {
+        Ok(self.persistent_memory.get_skill(name)?)
+    }
+    
+    pub fn update_skill_effectiveness(&self, skill_id: i64, effectiveness: f32) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(self.persistent_memory.update_skill_effectiveness(skill_id, effectiveness)?)
+    }
+    
+    pub fn get_all_skills(&self) -> Result<Vec<persistent_memory::Skill>, Box<dyn std::error::Error>> {
+        Ok(self.persistent_memory.get_all_skills()?)
+    }
+    
+    // 新增：添加持久记忆
+    pub fn add_persistent_memory(&self, category: &str, key: &str, value: &str, importance: i32) -> Result<persistent_memory::MemoryItem, Box<dyn std::error::Error>> {
+        Ok(self.persistent_memory.add_memory(category, key, value, importance)?)
     }
 }
