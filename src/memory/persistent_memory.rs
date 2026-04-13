@@ -1,7 +1,8 @@
 use crate::core::communication::CommManager;
 use log::{info, warn};
-use rusqlite::{params, Connection, Result};
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -36,275 +37,254 @@ pub struct UserProfile {
 
 #[derive(Clone)]
 pub struct PersistentMemory {
-    db_path: String,
+    skills_dir: String,
+    memory_dir: String,
+    profile_dir: String,
     comm_manager: Arc<CommManager>,
 }
 
 impl PersistentMemory {
-    pub fn new(db_path: &str, comm_manager: Arc<CommManager>) -> Result<Self> {
+    pub fn new(base_path: &str, comm_manager: Arc<CommManager>) -> Result<Self, Box<dyn std::error::Error>> {
+        let skills_dir = format!("{}/skills", base_path);
+        let memory_dir = format!("{}/memory", base_path);
+        let profile_dir = format!("{}/profile", base_path);
+        
+        // 创建必要的目录
+        fs::create_dir_all(&skills_dir)?;
+        fs::create_dir_all(&memory_dir)?;
+        fs::create_dir_all(&profile_dir)?;
+        
         let memory = Self {
-            db_path: db_path.to_string(),
+            skills_dir,
+            memory_dir,
+            profile_dir,
             comm_manager,
         };
         
-        memory.initialize_db()?;
         Ok(memory)
     }
     
-    fn initialize_db(&self) -> Result<()> {
-        let conn = Connection::open(&self.db_path)?;
-        
-        // 创建记忆表
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS memory_items (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                category TEXT NOT NULL,
-                key TEXT NOT NULL,
-                value TEXT NOT NULL,
-                timestamp TEXT NOT NULL,
-                importance INTEGER DEFAULT 0
-            )",
-            [],
-        )?;
-        
-        // 创建技能表
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS skills (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                description TEXT NOT NULL,
-                content TEXT NOT NULL,
-                usage_count INTEGER DEFAULT 0,
-                last_used TEXT NOT NULL,
-                effectiveness REAL DEFAULT 0.5
-            )",
-            [],
-        )?;
-        
-        // 创建用户配置表
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS user_profile (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                key TEXT NOT NULL,
-                value TEXT NOT NULL,
-                timestamp TEXT NOT NULL
-            )",
-            [],
-        )?;
-        
-        // 创建索引
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_category ON memory_items(category)", [])?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_memory_key ON memory_items(key)", [])?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_skills_name ON skills(name)", [])?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_user_profile_key ON user_profile(key)", [])?;
-        
-        Ok(())
-    }
-    
-    pub fn add_memory(&self, category: &str, key: &str, value: &str, importance: i32) -> Result<MemoryItem> {
-        let conn = Connection::open(&self.db_path)?;
+    pub fn add_memory(&self, category: &str, key: &str, value: &str, importance: i32) -> Result<MemoryItem, Box<dyn std::error::Error>> {
         let timestamp = Self::get_current_timestamp();
+        let id = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?.as_millis() as i64;
         
-        let id = conn.execute(
-            "INSERT INTO memory_items (category, key, value, timestamp, importance) 
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-            params![category, key, value, timestamp, importance],
-        )?;
-        
-        Ok(MemoryItem {
-            id: id as i64,
+        let memory_item = MemoryItem {
+            id,
             category: category.to_string(),
             key: key.to_string(),
             value: value.to_string(),
             timestamp,
             importance,
-        })
+        };
+        
+        // 保存到文件
+        let category_dir = format!("{}/{}", self.memory_dir, category);
+        fs::create_dir_all(&category_dir)?;
+        
+        let file_path = format!("{}/{}.json", category_dir, key);
+        let content = serde_json::to_string_pretty(&memory_item)?;
+        fs::write(file_path, content)?;
+        
+        Ok(memory_item)
     }
     
-    pub fn get_memory(&self, category: &str, key: &str) -> Result<Option<MemoryItem>> {
-        let conn = Connection::open(&self.db_path)?;
-        let mut stmt = conn.prepare(
-            "SELECT id, category, key, value, timestamp, importance 
-             FROM memory_items 
-             WHERE category = ?1 AND key = ?2 
-             ORDER BY timestamp DESC LIMIT 1"
-        )?;
+    pub fn get_memory(&self, category: &str, key: &str) -> Result<Option<MemoryItem>, Box<dyn std::error::Error>> {
+        let file_path = format!("{}/{}/{}.json", self.memory_dir, category, key);
         
-        let mut rows = stmt.query(params![category, key])?;
-        if let Some(row) = rows.next()? {
-            Ok(Some(MemoryItem {
-                id: row.get::<_, i64>(0)?,
-                category: row.get::<_, String>(1)?,
-                key: row.get::<_, String>(2)?,
-                value: row.get::<_, String>(3)?,
-                timestamp: row.get::<_, String>(4)?,
-                importance: row.get::<_, i32>(5)?,
-            }))
+        if Path::new(&file_path).exists() {
+            let content = fs::read_to_string(file_path)?;
+            let memory_item: MemoryItem = serde_json::from_str(&content)?;
+            Ok(Some(memory_item))
         } else {
             Ok(None)
         }
     }
     
-    pub fn search_memory(&self, query: &str) -> Result<Vec<MemoryItem>> {
-        let conn = Connection::open(&self.db_path)?;
-        let mut stmt = conn.prepare(
-            "SELECT id, category, key, value, timestamp, importance 
-             FROM memory_items 
-             WHERE value LIKE ?1 OR key LIKE ?1 OR category LIKE ?1 
-             ORDER BY importance DESC, timestamp DESC 
-             LIMIT 10"
-        )?;
-        
-        let mut rows = stmt.query(params![format!("%{query}%")])?;
+    pub fn search_memory(&self, query: &str) -> Result<Vec<MemoryItem>, Box<dyn std::error::Error>> {
         let mut results = Vec::new();
         
-        while let Some(row) = rows.next()? {
-            results.push(MemoryItem {
-                id: row.get::<_, i64>(0)?,
-                category: row.get::<_, String>(1)?,
-                key: row.get::<_, String>(2)?,
-                value: row.get::<_, String>(3)?,
-                timestamp: row.get::<_, String>(4)?,
-                importance: row.get::<_, i32>(5)?,
-            });
+        // 遍历所有记忆文件
+        if let Ok(entries) = fs::read_dir(&self.memory_dir) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    if entry.file_type()?.is_dir() {
+                        let category = entry.file_name().to_string_lossy().to_string();
+                        let category_path = entry.path();
+                        
+                        if let Ok(category_entries) = fs::read_dir(category_path) {
+                            for category_entry in category_entries {
+                                if let Ok(category_entry) = category_entry {
+                                    if category_entry.file_type()?.is_file() && 
+                                       category_entry.file_name().to_string_lossy().ends_with(".json") {
+                                        let content = fs::read_to_string(category_entry.path())?;
+                                        let memory_item: MemoryItem = serde_json::from_str(&content)?;
+                                        
+                                        if memory_item.value.contains(query) || 
+                                           memory_item.key.contains(query) || 
+                                           memory_item.category.contains(query) {
+                                            results.push(memory_item);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
+        
+        // 按重要性和时间戳排序
+        results.sort_by(|a, b| {
+            if a.importance != b.importance {
+                b.importance.cmp(&a.importance)
+            } else {
+                b.timestamp.cmp(&a.timestamp)
+            }
+        });
+        
+        // 限制返回数量
+        results.truncate(10);
         
         Ok(results)
     }
     
-    pub fn add_skill(&self, name: &str, description: &str, content: &str) -> Result<Skill> {
-        let conn = Connection::open(&self.db_path)?;
+    pub fn add_skill(&self, name: &str, description: &str, content: &str) -> Result<Skill, Box<dyn std::error::Error>> {
         let timestamp = Self::get_current_timestamp();
+        let id = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?.as_millis() as i64;
         
-        let id = conn.execute(
-            "INSERT INTO skills (name, description, content, usage_count, last_used, effectiveness) 
-             VALUES (?1, ?2, ?3, 0, ?4, 0.5)",
-            params![name, description, content, timestamp],
-        )?;
-        
-        Ok(Skill {
-            id: id as i64,
+        let skill = Skill {
+            id,
             name: name.to_string(),
             description: description.to_string(),
             content: content.to_string(),
             usage_count: 0,
             last_used: timestamp,
             effectiveness: 0.5,
-        })
+        };
+        
+        // 保存到文件
+        let sanitized_name = name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
+        let file_path = format!("{}/{}.json", self.skills_dir, sanitized_name);
+        let content = serde_json::to_string_pretty(&skill)?;
+        fs::write(file_path, content)?;
+        
+        Ok(skill)
     }
     
-    pub fn get_skill(&self, name: &str) -> Result<Option<Skill>> {
-        let conn = Connection::open(&self.db_path)?;
-        let mut stmt = conn.prepare(
-            "SELECT id, name, description, content, usage_count, last_used, effectiveness 
-             FROM skills 
-             WHERE name = ?1"
-        )?;
+    pub fn get_skill(&self, name: &str) -> Result<Option<Skill>, Box<dyn std::error::Error>> {
+        let sanitized_name = name.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
+        let file_path = format!("{}/{}.json", self.skills_dir, sanitized_name);
         
-        let mut rows = stmt.query(params![name])?;
-        if let Some(row) = rows.next()? {
-            Ok(Some(Skill {
-                id: row.get::<_, i64>(0)?,
-                name: row.get::<_, String>(1)?,
-                description: row.get::<_, String>(2)?,
-                content: row.get::<_, String>(3)?,
-                usage_count: row.get::<_, i32>(4)?,
-                last_used: row.get::<_, String>(5)?,
-                effectiveness: row.get::<_, f32>(6)?,
-            }))
+        if Path::new(&file_path).exists() {
+            let content = fs::read_to_string(file_path)?;
+            let skill: Skill = serde_json::from_str(&content)?;
+            Ok(Some(skill))
         } else {
+            // 尝试查找所有技能文件
+            if let Ok(entries) = fs::read_dir(&self.skills_dir) {
+                for entry in entries {
+                    if let Ok(entry) = entry {
+                        if entry.file_type()?.is_file() && 
+                           entry.file_name().to_string_lossy().ends_with(".json") {
+                            let content = fs::read_to_string(entry.path())?;
+                            let skill: Skill = serde_json::from_str(&content)?;
+                            if skill.name == name {
+                                return Ok(Some(skill));
+                            }
+                        }
+                    }
+                }
+            }
             Ok(None)
         }
     }
     
-    pub fn update_skill_effectiveness(&self, skill_id: i64, effectiveness: f32) -> Result<()> {
-        let conn = Connection::open(&self.db_path)?;
+    pub fn update_skill_effectiveness(&self, skill_id: i64, effectiveness: f32) -> Result<(), Box<dyn std::error::Error>> {
         let timestamp = Self::get_current_timestamp();
         
-        conn.execute(
-            "UPDATE skills 
-             SET effectiveness = ?1, last_used = ?2, usage_count = usage_count + 1 
-             WHERE id = ?3",
-            params![effectiveness, timestamp, skill_id],
-        )?;
+        // 查找并更新技能文件
+        if let Ok(entries) = fs::read_dir(&self.skills_dir) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    if entry.file_type()?.is_file() && 
+                       entry.file_name().to_string_lossy().ends_with(".json") {
+                        let file_path = entry.path();
+                        let content = fs::read_to_string(&file_path)?;
+                        let mut skill: Skill = serde_json::from_str(&content)?;
+                        
+                        if skill.id == skill_id {
+                            skill.effectiveness = effectiveness;
+                            skill.last_used = timestamp;
+                            skill.usage_count += 1;
+                            
+                            let updated_content = serde_json::to_string_pretty(&skill)?;
+                            fs::write(file_path, updated_content)?;
+                            return Ok(());
+                        }
+                    }
+                }
+            }
+        }
         
         Ok(())
     }
     
-    pub fn get_all_skills(&self) -> Result<Vec<Skill>> {
-        let conn = Connection::open(&self.db_path)?;
-        let mut stmt = conn.prepare(
-            "SELECT id, name, description, content, usage_count, last_used, effectiveness 
-             FROM skills 
-             ORDER BY usage_count DESC, effectiveness DESC"
-        )?;
-        
-        let mut rows = stmt.query([])?;
+    pub fn get_all_skills(&self) -> Result<Vec<Skill>, Box<dyn std::error::Error>> {
         let mut skills = Vec::new();
         
-        while let Some(row) = rows.next()? {
-            skills.push(Skill {
-                id: row.get::<_, i64>(0)?,
-                name: row.get::<_, String>(1)?,
-                description: row.get::<_, String>(2)?,
-                content: row.get::<_, String>(3)?,
-                usage_count: row.get::<_, i32>(4)?,
-                last_used: row.get::<_, String>(5)?,
-                effectiveness: row.get::<_, f32>(6)?,
-            });
+        if let Ok(entries) = fs::read_dir(&self.skills_dir) {
+            for entry in entries {
+                if let Ok(entry) = entry {
+                    if entry.file_type()?.is_file() && 
+                       entry.file_name().to_string_lossy().ends_with(".json") {
+                        let content = fs::read_to_string(entry.path())?;
+                        let skill: Skill = serde_json::from_str(&content)?;
+                        skills.push(skill);
+                    }
+                }
+            }
         }
+        
+        // 按使用次数和效果排序
+        skills.sort_by(|a, b| {
+            if a.usage_count != b.usage_count {
+                b.usage_count.cmp(&a.usage_count)
+            } else {
+                b.effectiveness.partial_cmp(&a.effectiveness).unwrap_or(std::cmp::Ordering::Equal)
+            }
+        });
         
         Ok(skills)
     }
     
-    pub fn set_user_profile(&self, key: &str, value: &str) -> Result<UserProfile> {
-        let conn = Connection::open(&self.db_path)?;
+    pub fn set_user_profile(&self, key: &str, value: &str) -> Result<UserProfile, Box<dyn std::error::Error>> {
         let timestamp = Self::get_current_timestamp();
+        let id = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH)?.as_millis() as i64;
         
-        // 检查是否已存在
-        let mut stmt = conn.prepare("SELECT id FROM user_profile WHERE key = ?1")?;
-        let mut rows = stmt.query(params![key])?;
+        let user_profile = UserProfile {
+            id,
+            key: key.to_string(),
+            value: value.to_string(),
+            timestamp,
+        };
         
-        if let Some(row) = rows.next()? {
-            let id: i64 = row.get::<_, i64>(0)?;
-            conn.execute(
-                "UPDATE user_profile SET value = ?1, timestamp = ?2 WHERE id = ?3",
-                params![value, timestamp, id],
-            )?;
-            Ok(UserProfile {
-                id,
-                key: key.to_string(),
-                value: value.to_string(),
-                timestamp,
-            })
-        } else {
-            let id = conn.execute(
-                "INSERT INTO user_profile (key, value, timestamp) VALUES (?1, ?2, ?3)",
-                params![key, value, timestamp],
-            )?;
-            Ok(UserProfile {
-                id: id as i64,
-                key: key.to_string(),
-                value: value.to_string(),
-                timestamp,
-            })
-        }
+        // 保存到文件
+        let sanitized_key = key.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
+        let file_path = format!("{}/{}.json", self.profile_dir, sanitized_key);
+        let content = serde_json::to_string_pretty(&user_profile)?;
+        fs::write(file_path, content)?;
+        
+        Ok(user_profile)
     }
     
-    pub fn get_user_profile(&self, key: &str) -> Result<Option<UserProfile>> {
-        let conn = Connection::open(&self.db_path)?;
-        let mut stmt = conn.prepare(
-            "SELECT id, key, value, timestamp FROM user_profile WHERE key = ?1"
-        )?;
+    pub fn get_user_profile(&self, key: &str) -> Result<Option<UserProfile>, Box<dyn std::error::Error>> {
+        let sanitized_key = key.replace(|c: char| !c.is_alphanumeric() && c != '_', "_");
+        let file_path = format!("{}/{}.json", self.profile_dir, sanitized_key);
         
-        let mut rows = stmt.query(params![key])?;
-        if let Some(row) = rows.next()? {
-            Ok(Some(UserProfile {
-                id: row.get::<_, i64>(0)?,
-                key: row.get::<_, String>(1)?,
-                value: row.get::<_, String>(2)?,
-                timestamp: row.get::<_, String>(3)?,
-            }))
+        if Path::new(&file_path).exists() {
+            let content = fs::read_to_string(file_path)?;
+            let user_profile: UserProfile = serde_json::from_str(&content)?;
+            Ok(Some(user_profile))
         } else {
             Ok(None)
         }
