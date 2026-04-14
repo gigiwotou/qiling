@@ -5,8 +5,6 @@ struct PetApp {
     last_click: Option<Instant>,
     message: String,
     show_message: bool,
-    x: f32,
-    y: f32,
     is_dragging: bool,
     drag_offset_x: f32,
     drag_offset_y: f32,
@@ -22,8 +20,6 @@ impl Default for PetApp {
             last_click: None,
             message: "你好！我是你的PC个人助手".to_string(),
             show_message: true,
-            x: 800.0,
-            y: 600.0,
             is_dragging: false,
             drag_offset_x: 0.0,
             drag_offset_y: 0.0,
@@ -36,18 +32,9 @@ impl Default for PetApp {
 }
 
 impl App for PetApp {
-    fn update(&mut self, ctx: &egui::Context, frame: &mut Frame) {
-        // 处理窗口拖动
-        if self.is_dragging {
-            if let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) {
-                self.x = pos.x - self.drag_offset_x;
-                self.y = pos.y - self.drag_offset_y;
-                frame.set_window_pos(egui::Pos2::new(self.x, self.y));
-            }
-        }
-
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut Frame) {
         // 处理点击事件
-        if ctx.input(|i| i.pointer.clicked()) {
+        if ctx.input(|i| i.pointer.button_pressed(egui::PointerButton::Primary)) {
             if let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) {
                 if pos.x >= 0.0 && pos.x <= 200.0 && pos.y >= 0.0 && pos.y <= 200.0 {
                     self.last_click = Some(Instant::now());
@@ -56,14 +43,16 @@ impl App for PetApp {
                 } else {
                     // 开始拖动
                     self.is_dragging = true;
-                    self.drag_offset_x = pos.x - self.x;
-                    self.drag_offset_y = pos.y - self.y;
+                    if let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) {
+                        self.drag_offset_x = pos.x;
+                        self.drag_offset_y = pos.y;
+                    }
                 }
             }
         }
 
         // 结束拖动
-        if ctx.input(|i| i.pointer.released()) {
+        if ctx.input(|i| i.pointer.button_released(egui::PointerButton::Primary)) {
             self.is_dragging = false;
         }
 
@@ -160,11 +149,13 @@ impl App for PetApp {
 
 fn main() {
     let options = NativeOptions {
-        initial_window_size: Some(egui::vec2(200.0, 200.0)),
-        resizable: false,
-        decorations: false,
-        transparent: true,
-        always_on_top: true,
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([200.0, 200.0])
+            .with_resizable(false)
+            .with_decorations(false)
+            .with_transparent(true)
+            .with_always_on_top(),
+        default_theme: eframe::Theme::Light,
         ..Default::default()
     };
 
